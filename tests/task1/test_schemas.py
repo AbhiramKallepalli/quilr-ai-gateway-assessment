@@ -22,17 +22,17 @@ def test_accepts_well_formed_customer_ids(customer_id):
 @pytest.mark.parametrize(
     "customer_id",
     [
-        "cust-10001",       # wrong case
-        "CUST-1000",        # too short
-        "CUST-100011",      # too long
-        "CUST-1000A",       # non-digit
-        " CUST-10001",      # leading space
-        "CUST-10001 ",      # trailing space
-        "CUST-10001\n",     # trailing newline
-        "CUST_10001",       # wrong separator
-        "CUST-١٠٠٠١",       # Arabic-Indic digits match \d but are not valid ids
+        "cust-10001",  # wrong case
+        "CUST-1000",  # too short
+        "CUST-100011",  # too long
+        "CUST-1000A",  # non-digit
+        " CUST-10001",  # leading space
+        "CUST-10001 ",  # trailing space
+        "CUST-10001\n",  # trailing newline
+        "CUST_10001",  # wrong separator
+        "CUST-١٠٠٠١",  # Arabic-Indic digits match \d but are not valid ids
         "",
-        10001,              # wrong type
+        10001,  # wrong type
         None,
     ],
 )
@@ -56,8 +56,7 @@ def test_accepts_valid_amounts(amount):
 
 @pytest.mark.parametrize(
     "amount",
-    [0, -1, -0.01, True, False, "10.00", None, [10], float("nan"), float("inf"),
-     10.001, 10_000.01],
+    [0, -1, -0.01, True, False, "10.00", None, [10], float("nan"), float("inf"), 10.001, 10_000.01],
 )
 def test_rejects_invalid_amounts(amount):
     with pytest.raises(ValidationError):

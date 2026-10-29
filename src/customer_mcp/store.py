@@ -46,12 +46,30 @@ class CustomerStore:
     def with_sample_data(cls) -> CustomerStore:
         return cls(
             [
-                Customer("CUST-10001", "Priya Raman", "priya.raman@example.com",
-                         "enterprise", "active", Decimal("250.00")),
-                Customer("CUST-10002", "Marcus Lee", "marcus.lee@example.com",
-                         "standard", "active", Decimal("40.00")),
-                Customer("CUST-10003", "Elena Petrova", "elena.petrova@example.com",
-                         "standard", "suspended", Decimal("100.00")),
+                Customer(
+                    "CUST-10001",
+                    "Priya Raman",
+                    "priya.raman@example.com",
+                    "enterprise",
+                    "active",
+                    Decimal("250.00"),
+                ),
+                Customer(
+                    "CUST-10002",
+                    "Marcus Lee",
+                    "marcus.lee@example.com",
+                    "standard",
+                    "active",
+                    Decimal("40.00"),
+                ),
+                Customer(
+                    "CUST-10003",
+                    "Elena Petrova",
+                    "elena.petrova@example.com",
+                    "standard",
+                    "suspended",
+                    Decimal("100.00"),
+                ),
             ]
         )
 

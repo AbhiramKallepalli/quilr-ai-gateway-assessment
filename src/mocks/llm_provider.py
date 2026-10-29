@@ -43,17 +43,31 @@ def _usage(body: dict[str, Any], text: str) -> dict[str, int]:
     }
 
 
-def create_mock_provider(name: str = "mock-provider") -> Starlette:
+def create_mock_provider(
+    name: str = "mock-provider",
+    *,
+    fail_status: int | None = None,
+    first_byte_delay_ms: float = 0,
+    retry_after_s: int | None = None,
+) -> Starlette:
+    """Body controls override the constructor defaults, which let two providers
+    behind one router behave differently in the same test."""
+
     async def chat_completions(request: Request) -> Response:
         body = await request.json()
         request.app.state.calls += 1
-        if body.get("mock_delay_first_ms"):
-            await asyncio.sleep(body["mock_delay_first_ms"] / 1000)
-        if body.get("mock_status"):
+        delay = body.get("mock_delay_first_ms", first_byte_delay_ms)
+        if delay:
+            await asyncio.sleep(delay / 1000)
+        status = body.get("mock_status", fail_status)
+        if status:
+            headers = {"retry-after": str(retry_after_s)} if retry_after_s else {}
             return JSONResponse(
                 {"error": {"message": f"{name} simulated failure", "trace": "Traceback ..."}},
-                status_code=int(body["mock_status"]),
+                status_code=int(status),
+                headers=headers,
             )
+        request.app.state.completed += 1
 
         text = _text_for(body)
         completion_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
@@ -105,6 +119,7 @@ def create_mock_provider(name: str = "mock-provider") -> Starlette:
 
     app = Starlette(routes=[Route("/v1/chat/completions", chat_completions, methods=["POST"])])
     app.state.calls = 0
+    app.state.completed = 0
     return app
 
 
