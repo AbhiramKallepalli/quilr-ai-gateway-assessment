@@ -1,0 +1,99 @@
+# docker compose up --build
+#
+#   Task 2  MCP security gateway   http://localhost:8080/mcp     (-> mcp-downstream)
+#   Task 3  PII stream guardrail   http://localhost:8090/v1      (-> llm-provider)
+#   Task 4  Rate limit + failover  http://localhost:8100/v1      (-> provider-primary / -secondary)
+#
+# The mock upstreams are only reachable inside the compose network.
+
+x-service: &service
+  build: .
+  image: quilr-ai-gateway-assessment
+  restart: unless-stopped
+  environment: &common-env
+    LOG_LEVEL: INFO
+
+services:
+  # ---- Task 2 ----------------------------------------------------------------
+  mcp-downstream:
+    <<: *service
+    command: python -m mocks.mcp_downstream
+    environment:
+      <<: *common-env
+      MOCK_HOST: 0.0.0.0
+      MOCK_PORT: "9000"
+
+  mcp-gateway:
+    <<: *service
+    command: python -m mcp_gateway
+    depends_on: [mcp-downstream]
+    ports: ["8080:8080"]
+    environment:
+      <<: *common-env
+      GATEWAY_HOST: 0.0.0.0
+      GATEWAY_PORT: "8080"
+      GATEWAY_DOWNSTREAM_URL: http://mcp-downstream:9000/mcp
+      # Demo tokens only. In a real deployment mount a secrets file and use GATEWAY_TOKENS_FILE.
+      GATEWAY_TOKENS: >-
+        {"admin-token-0123456789abcdef": {"subject": "alice@example.com", "role": "admin"},
+         "viewer-token-0123456789abcdef": {"subject": "bob@example.com", "role": "viewer"}}
+
+  # ---- Task 3 ----------------------------------------------------------------
+  llm-provider:
+    <<: *service
+    command: python -m mocks.llm_provider
+    environment:
+      <<: *common-env
+      MOCK_HOST: 0.0.0.0
+      MOCK_PORT: "9100"
+
+  stream-guardrail:
+    <<: *service
+    command: python -m stream_guardrail
+    depends_on: [llm-provider]
+    ports: ["8090:8090"]
+    environment:
+      <<: *common-env
+      GUARDRAIL_HOST: 0.0.0.0
+      GUARDRAIL_PORT: "8090"
+      GUARDRAIL_UPSTREAM_URL: http://llm-provider:9100/v1
+
+  # ---- Task 4 ----------------------------------------------------------------
+  provider-primary:
+    <<: *service
+    command: python -m mocks.llm_provider
+    environment:
+      <<: *common-env
+      MOCK_HOST: 0.0.0.0
+      MOCK_PORT: "9101"
+      MOCK_PROVIDER_NAME: primary
+
+  provider-secondary:
+    <<: *service
+    command: python -m mocks.llm_provider
+    environment:
+      <<: *common-env
+      MOCK_HOST: 0.0.0.0
+      MOCK_PORT: "9102"
+      MOCK_PROVIDER_NAME: secondary
+
+  model-router:
+    <<: *service
+    command: python -m model_router
+    depends_on: [provider-primary, provider-secondary]
+    ports: ["8100:8100"]
+    volumes: ["router-data:/app/data"]
+    environment:
+      <<: *common-env
+      ROUTER_HOST: 0.0.0.0
+      ROUTER_PORT: "8100"
+      ROUTER_DB_PATH: /app/data/router.db
+      ROUTER_TOKENS_PER_MINUTE: "50000"
+      ROUTER_ATTEMPT_TIMEOUT_MS: "3000"
+      ROUTER_PRIMARY_URL: http://provider-primary:9101/v1
+      ROUTER_SECONDARY_URL: http://provider-secondary:9102/v1
+      ROUTER_SECONDARY_MODEL: backup-model
+      ROUTER_TENANT_KEYS: '{"sk-tenant-alpha-0123456789": "alpha", "sk-tenant-beta-0123456789": "beta"}'
+
+volumes:
+  router-data:

@@ -6,6 +6,8 @@ Controls, passed in the request body (a real provider would ignore them):
   mock_delay_ms   pause between streamed chunks (default 0)
   mock_status     return this HTTP status instead of a completion
   mock_delay_first_ms  pause before the first byte (used by the router tests)
+  mock_target     apply mock_status / mock_delay_first_ms only on the provider with
+                  this name, e.g. "primary", to demo failover through docker compose
 """
 
 from __future__ import annotations
@@ -56,10 +58,11 @@ def create_mock_provider(
     async def chat_completions(request: Request) -> Response:
         body = await request.json()
         request.app.state.calls += 1
-        delay = body.get("mock_delay_first_ms", first_byte_delay_ms)
+        targeted = body.get("mock_target") in (None, name)
+        delay = body.get("mock_delay_first_ms", first_byte_delay_ms) if targeted else 0
         if delay:
             await asyncio.sleep(delay / 1000)
-        status = body.get("mock_status", fail_status)
+        status = body.get("mock_status", fail_status) if targeted else fail_status
         if status:
             headers = {"retry-after": str(retry_after_s)} if retry_after_s else {}
             return JSONResponse(
