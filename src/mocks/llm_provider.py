@@ -127,13 +127,17 @@ def create_mock_provider(
 
 
 def main() -> None:
+    import argparse
+
     import uvicorn
 
+    parser = argparse.ArgumentParser(description="Mock OpenAI-compatible provider")
+    parser.add_argument("--name", default=os.environ.get("MOCK_PROVIDER_NAME", "mock-provider"))
+    parser.add_argument("--host", default=os.environ.get("MOCK_HOST", "127.0.0.1"))
+    parser.add_argument("--port", type=int, default=int(os.environ.get("MOCK_PORT", "9100")))
+    args = parser.parse_args()
     uvicorn.run(
-        create_mock_provider(os.environ.get("MOCK_PROVIDER_NAME", "mock-provider")),
-        host=os.environ.get("MOCK_HOST", "127.0.0.1"),
-        port=int(os.environ.get("MOCK_PORT", "9100")),
-        log_level="warning",
+        create_mock_provider(args.name), host=args.host, port=args.port, log_level="warning"
     )
 
 

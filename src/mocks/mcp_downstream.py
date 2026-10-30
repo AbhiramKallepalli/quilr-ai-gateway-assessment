@@ -107,15 +107,22 @@ def tool_calls(app: Starlette) -> list[dict[str, Any]]:
 
 
 def main() -> None:
+    import argparse
+
     import uvicorn
 
-    app = create_mock_downstream(sse=os.environ.get("MOCK_SSE") == "1")
-    uvicorn.run(
-        app,
-        host=os.environ.get("MOCK_HOST", "127.0.0.1"),
-        port=int(os.environ.get("MOCK_PORT", "9000")),
-        log_level="warning",
+    parser = argparse.ArgumentParser(description="Mock downstream MCP server")
+    parser.add_argument("--host", default=os.environ.get("MOCK_HOST", "127.0.0.1"))
+    parser.add_argument("--port", type=int, default=int(os.environ.get("MOCK_PORT", "9000")))
+    parser.add_argument(
+        "--sse",
+        action="store_true",
+        default=os.environ.get("MOCK_SSE") == "1",
+        help="answer with text/event-stream instead of JSON",
     )
+    args = parser.parse_args()
+    app = create_mock_downstream(sse=args.sse)
+    uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
 
 
 if __name__ == "__main__":

@@ -13,6 +13,8 @@ Python 3.12, one `uv` project, 221 tests. Mock upstreams live in [`src/mocks`](s
 
 ## Quick start
 
+Requires [uv](https://docs.astral.sh/uv/getting-started/installation/); Docker is optional.
+
 ```bash
 uv sync                           # install (uv downloads Python 3.12 if needed)
 uv run pytest -q                  # 221 tests, ~40 s (one test really waits out the 3 s timeout)
@@ -20,7 +22,7 @@ uv run python scripts/demo.py     # walks through all four tasks in one process
 docker compose up --build         # gateways on :8080 (Task 2), :8090 (Task 3), :8100 (Task 4)
 ```
 
-With the compose stack running:
+With the compose stack running (bash/zsh; on Windows use Git Bash or WSL):
 
 ```bash
 # Task 2: a viewer calling an admin tool is answered by the gateway, downstream never sees it
@@ -42,7 +44,7 @@ curl -si localhost:8100/v1/chat/completions -H "Authorization: Bearer sk-tenant-
 # x-gateway-provider: secondary   x-gateway-attempts: 2
 ```
 
-`mock_*` fields are instructions for the mock providers only. Every environment variable is listed in [`.env.example`](.env.example).
+`mock_*` fields are instructions for the mock providers only. Every environment variable is listed in [`.env.example`](.env.example), which also works as-is for running a service locally: `uv run --env-file .env.example python -m <service>`.
 
 ## Evaluation criteria and where they are proven
 
@@ -66,8 +68,11 @@ curl -si localhost:8100/v1/chat/completions -H "Authorization: Bearer sk-tenant-
 ## Task 1: MCP server
 
 ```bash
-uv run python -m customer_mcp          # speaks JSON-RPC on stdin/stdout
+uv run python -m customer_mcp              # speaks JSON-RPC on stdin/stdout, logs on stderr
+docker compose run --rm -T customer-mcp    # same thing from the container image
 ```
+
+It isn't started by `docker compose up` because a stdio server has no port: the MCP client launches the process and owns its stdin/stdout. `CUSTOMER_MCP_LOG_LEVEL` sets the log level.
 
 To use it from Claude Desktop or another MCP client:
 
@@ -89,8 +94,8 @@ Assumption: "CUST-XXXXX" means five ASCII digits.
 ## Task 2: MCP security gateway
 
 ```bash
-GATEWAY_TOKENS='{"admin-token-0123456789abcdef":{"subject":"alice","role":"admin"}}' uv run python -m mcp_gateway
-uv run python -m mocks.mcp_downstream     # the downstream it proxies to
+uv run python -m mocks.mcp_downstream --port 9000          # the downstream it proxies to
+uv run --env-file .env.example python -m mcp_gateway       # gateway on :8080
 ```
 
 Request path: authenticate → parse strictly → authorize every message → forward the original bytes or answer locally → one audit event per decision.
@@ -106,8 +111,8 @@ Request path: authenticate → parse strictly → authorize every message → fo
 ## Task 3: Streaming PII guardrail
 
 ```bash
-uv run python -m mocks.llm_provider       # mock OpenAI-compatible provider on :9100
-uv run python -m stream_guardrail         # gateway on :8090, base_url http://localhost:8090/v1
+uv run python -m mocks.llm_provider --port 9100               # mock OpenAI-compatible provider
+uv run --env-file .env.example python -m stream_guardrail     # base_url http://localhost:8090/v1
 uv run python scripts/bench_guardrail.py
 ```
 
@@ -134,8 +139,9 @@ Measured on a Windows laptop (1 MB of prose with PII, `scripts/bench_guardrail.p
 ## Task 4: Rate limiter and fallback router
 
 ```bash
-uv run python -m mocks.llm_provider       # run twice with MOCK_PORT=9101 / 9102, or use docker compose
-uv run python -m model_router             # see .env.example for ROUTER_* settings
+uv run python -m mocks.llm_provider --port 9101 --name primary
+uv run python -m mocks.llm_provider --port 9102 --name secondary
+uv run --env-file .env.example python -m model_router         # on :8100, SQLite in data/
 ```
 
 **Sliding log, not buckets.** Every request is a row `(tenant, ts_ms, tokens)`. Usage is the sum over the last 60 s, and expired rows are deleted on every check. Fixed one-minute buckets would let a tenant send 2× the limit across a boundary.
@@ -160,7 +166,7 @@ For streams the timeout covers the time to the first chunk; after that the strea
 
 ## Deploying at a customer
 
-- **Configuration** is environment-only ([`.env.example`](.env.example)). Token files can be mounted as secrets (`GATEWAY_TOKENS_FILE`). One container image runs every service ([`docker-compose.yml`](docker-compose.yml)), as a non-root user.
+- **Configuration** is environment-only ([`.env.example`](.env.example)); a missing required setting stops the service at startup with the variable's name. Token files can be mounted as secrets (`GATEWAY_TOKENS_FILE`). One container image runs every service ([`docker-compose.yml`](docker-compose.yml)), as a non-root user, including the stdio MCP server (`docker compose run --rm -T customer-mcp`).
 - **Logs** are one JSON object per line; the Task 2 audit events (`decision`, `auth_failed`, `forwarded`, `downstream_error`) carry `request_id`, subject, role, tool and reason, which is what a SIEM rule needs.
 - **Identity.** Static tokens stand in for the customer's IdP. Swapping `authenticate()` for JWT/JWKS validation (issuer, audience, a `role` or group claim) is a contained change.
 - **Scaling Task 4.** SQLite with `BEGIN IMMEDIATE` is correct for one node, or several processes on one host (tested). Several hosts need a shared store: Redis with a Lua script doing the same evict–sum–insert atomically, or Postgres.

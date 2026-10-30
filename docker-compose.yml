@@ -1,5 +1,6 @@
 # docker compose up --build
 #
+#   Task 1  MCP server (stdio)     not started by `up`; see the customer-mcp service below
 #   Task 2  MCP security gateway   http://localhost:8080/mcp     (-> mcp-downstream)
 #   Task 3  PII stream guardrail   http://localhost:8090/v1      (-> llm-provider)
 #   Task 4  Rate limit + failover  http://localhost:8100/v1      (-> provider-primary / -secondary)
@@ -14,6 +15,19 @@ x-service: &service
     LOG_LEVEL: INFO
 
 services:
+  # ---- Task 1 ----------------------------------------------------------------
+  # A stdio MCP server has no port: the MCP client starts it and talks over
+  # stdin/stdout. It sits behind a profile so `up` skips it; run it on demand:
+  #   docker compose run --rm -T customer-mcp
+  customer-mcp:
+    <<: *service
+    command: python -m customer_mcp
+    profiles: [stdio]
+    stdin_open: true
+    restart: "no"
+    environment:
+      CUSTOMER_MCP_LOG_LEVEL: INFO
+
   # ---- Task 2 ----------------------------------------------------------------
   mcp-downstream:
     <<: *service

@@ -60,11 +60,11 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> Settings:
-        keys = json.loads(os.environ["ROUTER_TENANT_KEYS"])
+        keys = json.loads(_required("ROUTER_TENANT_KEYS"))
         providers = tuple(
             Provider(
                 label=label,
-                base_url=os.environ[f"ROUTER_{label.upper()}_URL"],
+                base_url=_required(f"ROUTER_{label.upper()}_URL"),
                 api_key=os.environ.get(f"ROUTER_{label.upper()}_API_KEY") or None,
                 model=os.environ.get(f"ROUTER_{label.upper()}_MODEL") or None,
             )
@@ -77,6 +77,13 @@ class Settings:
             attempt_timeout_s=float(os.environ.get("ROUTER_ATTEMPT_TIMEOUT_MS", "3000")) / 1000,
             db_path=os.environ.get("ROUTER_DB_PATH", "data/router.db"),
         )
+
+
+def _required(name: str) -> str:
+    value = os.environ.get(name)
+    if not value:
+        raise RuntimeError(f"{name} is not set (see .env.example)")
+    return value
 
 
 def _validate(body: Any) -> str | None:
