@@ -22,9 +22,21 @@ uv run python scripts/demo.py     # walks through all four tasks in one process
 docker compose up --build         # gateways on :8080 (Task 2), :8090 (Task 3), :8100 (Task 4)
 ```
 
-With the compose stack running (bash/zsh; on Windows use Git Bash or WSL):
+Try each task (bash/zsh; on Windows use Git Bash or WSL). Task 1 needs nothing running; Tasks 2-4 need the compose stack.
 
 ```bash
+# Task 1: the stdio server speaks JSON-RPC on stdout; a malformed customer_id is a -32602 error.
+# stderr is discarded to show stdout holds nothing but protocol messages. The sleep keeps stdin
+# open while the server answers, as a real MCP client would.
+(printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"demo","version":"0"}}}' \
+  '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_customer_record","arguments":{"customer_id":"cust-1"}}}'
+ sleep 1) | uv run python -m customer_mcp 2>/dev/null
+# {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18",...}}
+# {"jsonrpc":"2.0","id":2,"error":{"code":-32602,"message":"Invalid arguments for tool 'get_customer_record'",...}}
+# (or pipe into `docker compose run --rm -T customer-mcp` instead of `uv run ...`)
+
 # Task 2: a viewer calling an admin tool is answered by the gateway, downstream never sees it
 curl -s localhost:8080/mcp -H "Authorization: Bearer viewer-token-0123456789abcdef" \
   -H "Content-Type: application/json" \
