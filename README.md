@@ -148,7 +148,7 @@ uv run --env-file .env.example python -m model_router         # on :8100, SQLite
 
 **Reserve, then reconcile.** Checking the limit and recording usage after the response lets concurrent requests all pass the same check. Instead, before calling a model, the router reserves the *estimated* tokens (prompt ≈ chars/4 + `max_tokens`) in one `BEGIN IMMEDIATE` transaction. That takes SQLite's write lock before reading, so it also holds across several gateway processes sharing the file. After the response, the reservation is replaced by the provider's `usage.total_tokens`. If every provider fails, it is released and the tenant isn't charged. `Retry-After` is the exact time until enough old usage leaves the window.
 
-**SQLite off the event loop.** All database work runs on one dedicated thread, so the loop never blocks on disk I/O and the connection is only used from one thread. WAL mode, `busy_timeout`, and API keys stored as SHA-256 hashes.
+**SQLite off the event loop.** All database work runs on one dedicated thread, so the loop never blocks on disk I/O and the connection is only used from one thread. WAL mode and `busy_timeout`. Tenant API keys are only held as SHA-256 hashes; the database stores tenant ids.
 
 **Failover.** Each attempt runs under `asyncio.timeout(3.0)`. The timeout and the response can't both win: either the block finishes or it is cancelled, and cancelling also cancels the HTTP request so the slow primary isn't left running (`test_timed_out_primary_is_cancelled_not_left_running`).
 
@@ -178,8 +178,8 @@ For streams the timeout covers the time to the first chunk; after that the strea
 
 ## Findings worth sharing with the product team
 
-1. **Response scanning on streams.** QuilrAI's LLM Gateway docs say response-side scanning is skipped for SSE streams and chunks pass through unchanged. Task 3 shows one way to close that gap without buffering the response: hold back only what could still be PII, keep memory bounded, and prove equivalence with a property test. It holds back less than a fixed look-back window (the LiteLLM plugin's `stream_holdback_chars` defaults to 64).
-2. **Counting tokens at completion can overshoot.** The rate-limit docs note that tokens are counted when a request completes, so one in-flight request can carry a counter past its limit. Reserving the estimate up front and reconciling afterwards keeps the limit exact under concurrency.
+1. **Response scanning on streams.** QuilrAI's LLM Gateway docs say response-side scanning is skipped for SSE streams and chunks pass through unchanged. Task 3 shows one way to close that gap without buffering the response: hold back only what could still be PII, keep memory bounded, and prove equivalence with a property test. It holds back less than a fixed look-back window (the LiteLLM plugin's `incremental_diff` mode holds back `stream_holdback_chars`, 64 by default).
+2. **Counting tokens at completion can overshoot.** The budgets section of the rate, token and budget limits docs notes that tokens are counted when a request completes, so one in-flight request can carry a counter past its limit. Reserving the estimate up front and reconciling afterwards keeps the limit exact under concurrency.
 3. **The MCP Python SDK returns `-32602` for unknown methods.** It validates each request against its known request types before dispatch, so `tools/explode` fails validation instead of returning JSON-RPC's `-32601`. Worth knowing when mapping errors in a gateway.
 4. **Parser differentials in MCP gateways.** Any gateway that authorizes on a parsed body and forwards raw bytes should reject duplicate JSON keys, or re-serialize what it inspected.
 
